@@ -1,0 +1,42 @@
+{
+  "approve_keywords": [
+    "covered",
+    "approved",
+    "benefits",
+    "eligible",
+    "included",
+    "payable",
+    "reimbursable",
+    "entitled",
+    "provision",
+    "covered under",
+    "benefit payable",
+    "compensation",
+    "allowable",
+    "admissible",
+    "valid claim"
+  ],
+  "deny_keywords": [
+    "excluded",
+    "exclusion",
+    "not covered",
+    "waiting period",
+    "24 months",
+    "24-month",
+    "two years",
+    "pre-existing",
+    "denied",
+    "ineligible",
+    "except",
+    "limitations",
+    "excluded until",
+    "after the expiry of",
+    "continuous coverage",
+    "shall be excluded",
+    "not payable",
+    "restriction",
+    "subject to waiting period",
+    "waiting period of",
+    "months of continuous coverage"
+  ]
+}
