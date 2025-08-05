@@ -1,36 +1,37 @@
-from dotenv import load_dotenv
 import os
-
-# Load environment variables
-env_path = os.path.join(os.path.dirname(__file__), ".env")
-load_dotenv(dotenv_path=env_path)
-
-import pdfplumber
+import re
+import json
 import requests
 import tempfile
 import numpy as np
 import faiss
-import json
-import re
+import pdfplumber
 import google.generativeai as genai
+from dotenv import load_dotenv
+from pathlib import Path
 
-# ENV VARS
+# Load environment variables
+env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=env_path)
+
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-print("[DEBUG] GOOGLE_API_KEY loaded:", GOOGLE_API_KEY)
-
 if not GOOGLE_API_KEY:
     raise ValueError("GOOGLE_API_KEY is not set. Check your .env file or environment.")
 
 genai.configure(api_key=GOOGLE_API_KEY)
 
+# Load keywords for optional future logic (like auto-approval/denial)
+APPROVE_KEYWORDS = []
+DENY_KEYWORDS = []
+try:
+    with open("keywords.json", "r") as f:
+        kws = json.load(f)
+        APPROVE_KEYWORDS = [kw.lower() for kw in kws.get("approve_keywords", [])]
+        DENY_KEYWORDS = [kw.lower() for kw in kws.get("deny_keywords", [])]
+except Exception:
+    pass  # Safe fallback if keywords file is missing
 
-
-# Load keywords
-with open("keywords.json", "r") as f:
-    kws = json.load(f)
-APPROVE_KEYWORDS = [kw.lower() for kw in kws["approve_keywords"]]
-DENY_KEYWORDS = [kw.lower() for kw in kws["deny_keywords"]]
-
+# Gemini model configurations
 MODEL_EMBED = "models/embedding-001"
 MODEL_CHAT = "gemini-2.0-flash-exp"
 
@@ -57,7 +58,7 @@ def split_chunks(text, max_chars=1500, overlap=200):
     for para in paragraphs:
         if len(para) > max_chars:
             for i in range(0, len(para), max_chars - overlap):
-                chunks.append(para[i:i+max_chars])
+                chunks.append(para[i:i + max_chars])
         elif len(para.strip()) > 100:
             chunks.append(para.strip())
     return chunks
@@ -89,7 +90,7 @@ def search_chunks(query, chunks, embeddings, top_k=5):
     return [chunks[i] for i in I[0]]
 
 def ask_gemini(question, context_chunks):
-    context = "\n\n".join([f"Clause {i+1}:\n{chunk}" for i, chunk in enumerate(context_chunks)])
+    context = "\n\n".join([f"Clause {i + 1}:\n{chunk}" for i, chunk in enumerate(context_chunks)])
     prompt = f"""
 You are an expert policy analyzer.
 
