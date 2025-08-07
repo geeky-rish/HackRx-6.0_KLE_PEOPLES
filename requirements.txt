@@ -1,7 +1,9 @@
 fastapi
 uvicorn
-pdfplumber
-requests
-faiss-cpu
 python-dotenv
+requests
+numpy
+faiss-cpu
+pdfplumber
 google-generativeai
+pydantic

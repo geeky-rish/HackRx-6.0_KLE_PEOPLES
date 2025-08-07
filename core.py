@@ -1,3 +1,4 @@
+
 import os
 import re
 import json
@@ -9,6 +10,7 @@ import pdfplumber
 import google.generativeai as genai
 from dotenv import load_dotenv
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 # Load environment variables
 env_path = Path(__file__).resolve().parent / ".env"
@@ -20,7 +22,9 @@ if not GOOGLE_API_KEY:
 
 genai.configure(api_key=GOOGLE_API_KEY)
 
-# Load keywords for optional future logic (like auto-approval/denial)
+MODEL_EMBED = "models/embedding-001"
+MODEL_CHAT = "gemini-2.0-flash-exp"
+
 APPROVE_KEYWORDS = []
 DENY_KEYWORDS = []
 try:
@@ -29,11 +33,7 @@ try:
         APPROVE_KEYWORDS = [kw.lower() for kw in kws.get("approve_keywords", [])]
         DENY_KEYWORDS = [kw.lower() for kw in kws.get("deny_keywords", [])]
 except Exception:
-    pass  # Safe fallback if keywords file is missing
-
-# Gemini model configurations
-MODEL_EMBED = "models/embedding-001"
-MODEL_CHAT = "gemini-2.0-flash-exp"
+    pass
 
 def download_and_extract_text(pdf_url):
     response = requests.get(pdf_url)
@@ -42,17 +42,18 @@ def download_and_extract_text(pdf_url):
         tmp_file.write(response.content)
         tmp_file_path = tmp_file.name
 
-    text = ""
+    def extract_page_text(page):
+        return page.extract_text() or ""
+
     with pdfplumber.open(tmp_file_path) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
+        with ThreadPoolExecutor() as executor:
+            texts = executor.map(extract_page_text, pdf.pages)
+        text = "\n".join(t for t in texts if t)
 
     os.remove(tmp_file_path)
     return text
 
-def split_chunks(text, max_chars=1500, overlap=200):
+def split_chunks(text, max_chars=1500, overlap=100):
     paragraphs = re.split(r'\n\s*\n', text)
     chunks = []
     for para in paragraphs:
@@ -74,6 +75,7 @@ def embed_chunks(chunks):
         embeddings.append(resp["embedding"])
     return np.array(embeddings).astype("float32")
 
+
 def embed_query(query):
     resp = genai.embed_content(
         model=MODEL_EMBED,
@@ -82,9 +84,12 @@ def embed_query(query):
     )
     return np.array([resp["embedding"]]).astype("float32")
 
-def search_chunks(query, chunks, embeddings, top_k=5):
+def build_faiss_index(embeddings):
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(embeddings)
+    return index
+
+def search_chunks(query, chunks, embeddings, index, top_k=5):
     query_emb = embed_query(query)
     _, I = index.search(query_emb, top_k)
     return [chunks[i] for i in I[0]]
@@ -111,9 +116,11 @@ def process_pdf_and_answer_questions(pdf_url, questions):
     full_text = download_and_extract_text(pdf_url)
     chunks = split_chunks(full_text)
     embeddings = embed_chunks(chunks)
+    index = build_faiss_index(embeddings)
+
     answers = []
     for q in questions:
-        top_chunks = search_chunks(q, chunks, embeddings, top_k=4)
+        top_chunks = search_chunks(q, chunks, embeddings, index, top_k=4)
         answer = ask_gemini(q, top_chunks)
         answers.append(answer)
     return answers
